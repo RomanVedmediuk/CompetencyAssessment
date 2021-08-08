@@ -1,16 +1,13 @@
-using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
-using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using System;
-using System.Collections.Generic;
-using System.Net.Http;
-using System.Text;
-using System.Threading.Tasks;
-
 namespace CompetencyAssessment.Client
 {
+    using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
+    using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
+    using Microsoft.Extensions.DependencyInjection;
+    using System;
+    using System.Net.Http;
+    using System.Threading.Tasks;
+    using Repository;
+
     public class Program
     {
         public static async Task Main(string[] args)
@@ -18,19 +15,49 @@ namespace CompetencyAssessment.Client
             var builder = WebAssemblyHostBuilder.CreateDefault(args);
             builder.RootComponents.Add<App>("#app");
 
-            builder.Services.AddHttpClient("CompetencyAssessment.ServerAPI", client => client.BaseAddress = new Uri(builder.HostEnvironment.BaseAddress))
+            await ConfigureServicesAsync(builder.Services, builder.HostEnvironment);
+            await builder.Build().RunAsync();
+        }
+
+        private static async Task ConfigureServicesAsync(IServiceCollection services, IWebAssemblyHostEnvironment webAssemblyHostEnvironment)
+        {
+            services.AddHttpClient("CompetencyAssessment.ServerAPI.Private",
+                client => client.BaseAddress = new Uri(webAssemblyHostEnvironment.BaseAddress))
                 .AddHttpMessageHandler<BaseAddressAuthorizationMessageHandler>();
 
-            // Supply HttpClient instances that include access tokens when making requests to the server project
-            builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("CompetencyAssessment.ServerAPI"));
+            services.AddHttpClient("CompetencyAssessment.ServerAPI.Public",
+                client => client.BaseAddress = new Uri(webAssemblyHostEnvironment.BaseAddress));
 
-            builder.Services.AddMsalAuthentication(options =>
+            // Supply HttpClient instances that include access tokens when making requests to the server project
+            services.AddScoped(sp =>
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient("CompetencyAssessment.ServerAPI.Private"));
+
+            services.AddScoped<IHttpService, HttpService>();
+
+            await ConfigureMsalAuthenticationAsync(services);
+        }
+
+        private static async Task ConfigureMsalAuthenticationAsync(IServiceCollection services)
+        {
+            services.AddScoped(provider =>
             {
-                builder.Configuration.Bind("AzureAd", options.ProviderOptions.Authentication);
-                options.ProviderOptions.DefaultAccessTokenScopes.Add("api://ec6823f9-9e4f-4ca8-82ae-8b59d032bcd6/access_as_user");
+                var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("CompetencyAssessment.ServerAPI.Public");
+                return new AuthenticationOptionsRepository(new HttpService(client));
             });
 
-            await builder.Build().RunAsync();
+            var sp = services.BuildServiceProvider();
+            var configRepository = sp.GetRequiredService<AuthenticationOptionsRepository>();
+            var (clientId, authority, validateAuthority) = await configRepository.Get();
+
+            services.AddMsalAuthentication(options =>
+            {
+                var authenticationOptions = options.ProviderOptions.Authentication;
+                authenticationOptions.ClientId = clientId;
+                authenticationOptions.Authority = authority;
+                authenticationOptions.ValidateAuthority = validateAuthority;
+
+                options.ProviderOptions.DefaultAccessTokenScopes.Add($"api://{clientId}/access_as_user");
+            });
         }
     }
 }
