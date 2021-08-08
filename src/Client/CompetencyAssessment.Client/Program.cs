@@ -27,7 +27,7 @@ namespace CompetencyAssessment.Client
             builder.Services.AddMsalAuthentication(options =>
             {
                 builder.Configuration.Bind("AzureAd", options.ProviderOptions.Authentication);
-                options.ProviderOptions.DefaultAccessTokenScopes.Add("api://api.id.uri/access_as_user");
+                options.ProviderOptions.DefaultAccessTokenScopes.Add("api://ec6823f9-9e4f-4ca8-82ae-8b59d032bcd6/access_as_user");
             });
 
             await builder.Build().RunAsync();

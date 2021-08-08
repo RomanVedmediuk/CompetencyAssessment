@@ -9,6 +9,8 @@ using System.Threading.Tasks;
 
 namespace CompetencyAssessment.Server
 {
+    using Azure.Identity;
+
     public class Program
     {
         public static void Main(string[] args)
@@ -18,6 +20,24 @@ namespace CompetencyAssessment.Server
 
         public static IHostBuilder CreateHostBuilder(string[] args) =>
             Host.CreateDefaultBuilder(args)
+                .ConfigureAppConfiguration((hostingContext, config) =>
+                {
+                    var settings = config.Build();
+                    if (hostingContext.HostingEnvironment.IsDevelopment())
+                    {
+                        var connectionString = settings["AzureAppConfigConnectionString"];
+                        config.AddAzureAppConfiguration(connectionString);
+                    }
+                    else
+                    {
+                        var endpoint = settings["AppConfigEndpoint"];
+                        var credentials = new ManagedIdentityCredential();
+                        config.AddAzureAppConfiguration(options =>
+                        {
+                            options.Connect(new Uri(endpoint), credentials);
+                        });
+                    }
+                })
                 .ConfigureWebHostDefaults(webBuilder =>
                 {
                     webBuilder.UseStartup<Startup>();
